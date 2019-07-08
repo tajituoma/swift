@@ -2665,8 +2665,7 @@ AutoDiffParameterIndices *
 TypeChecker::inferDifferentiableParameters(
     AbstractFunctionDecl *AFD, GenericEnvironment *derivativeGenEnv) {
   auto &ctx = AFD->getASTContext();
-  auto *functionType = AFD->getInterfaceType()->eraseDynamicSelfType()
-      ->castTo<AnyFunctionType>();
+  auto *functionType = AFD->getInterfaceType()->castTo<AnyFunctionType>();
   AutoDiffParameterIndicesBuilder builder(functionType);
   SmallVector<Type, 4> allParamTypes;
 
@@ -2833,8 +2832,7 @@ static bool checkFunctionSignature(
   CanAnyFunctionType requiredResultFnTy =
       dyn_cast<AnyFunctionType>(required.getResult());
   if (!requiredResultFnTy)
-    return required.getResult()->eraseDynamicSelfType()->isEqual(
-        candidateFnTy.getResult()->eraseDynamicSelfType());
+    return required.getResult()->isEqual(candidateFnTy.getResult());
 
   // Required result type is a function. Recurse.
   return checkFunctionSignature(requiredResultFnTy, candidateFnTy.getResult());
@@ -2854,8 +2852,7 @@ static AutoDiffParameterIndices *computeDifferentiationParameters(
 ) {
   // Get function type and parameters.
   TC.resolveDeclSignature(function);
-  auto *functionType = function->getInterfaceType()->eraseDynamicSelfType()
-      ->castTo<AnyFunctionType>();
+  auto *functionType = function->getInterfaceType()->castTo<AnyFunctionType>();
   auto &params = *function->getParameters();
   auto numParams = function->getParameters()->size();
   auto isInstanceMethod = function->isInstanceMember();
@@ -3066,8 +3063,7 @@ void AttributeChecker::visitDifferentiableAttr(DifferentiableAttr *attr) {
   }
 
   TC.resolveDeclSignature(original);
-  auto *originalFnTy = original->getInterfaceType()->eraseDynamicSelfType()
-      ->castTo<AnyFunctionType>();
+  auto *originalFnTy = original->getInterfaceType()->castTo<AnyFunctionType>();
   bool isMethod = original->hasImplicitSelfDecl();
 
   // If the original function returns the empty tuple type, there's no output to
@@ -3354,7 +3350,7 @@ void AttributeChecker::visitDifferentiatingAttr(DifferentiatingAttr *attr) {
   auto original = attr->getOriginal();
 
   auto *derivativeInterfaceType = derivative->getInterfaceType()
-      ->eraseDynamicSelfType()->castTo<AnyFunctionType>();
+      ->castTo<AnyFunctionType>();
 
   // Perform preliminary derivative checks.
 
