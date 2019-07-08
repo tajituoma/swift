@@ -426,15 +426,15 @@ SIMPLE_DECL_ATTR(IBSegueAction, IBSegueAction,
 DECL_ATTR(differentiable, Differentiable,
   OnAccessor | OnConstructor | OnFunc | OnVar | OnSubscript | LongAttribute |
   AllowMultipleAttributes,
-  89)
+  90)
 DECL_ATTR(differentiating, Differentiating,
   OnFunc | LongAttribute | AllowMultipleAttributes |
-  NotSerialized, 90)
+  NotSerialized, 91)
 SIMPLE_DECL_ATTR(compilerEvaluable, CompilerEvaluable,
   OnAccessor | OnFunc | OnConstructor | OnSubscript,
-  /* Not serialized */ 91)
+  /* Not serialized */ 92)
 SIMPLE_DECL_ATTR(noDerivative, NoDerivative,
-  OnVar, 92)
+  OnVar, 93)
 
 #undef TYPE_ATTR
 #undef DECL_ATTR_ALIAS
