@@ -1338,6 +1338,7 @@ namespace  {
     UNINTERESTING_ATTR(PropertyWrapper)
     UNINTERESTING_ATTR(DisfavoredOverload)
     UNINTERESTING_ATTR(FunctionBuilder)
+    UNINTERESTING_ATTR(ProjectedValueProperty)
 #undef UNINTERESTING_ATTR
 
     void visitAvailableAttr(AvailableAttr *attr) {

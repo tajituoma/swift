@@ -304,8 +304,7 @@ ProtocolConformance *RequirementFailure::getConformanceForConditionalReq(
     return nullptr;
   }
 
-  auto *typeReqLoc = cs.getConstraintLocator(getRawAnchor(), path.drop_back(),
-                                             /*summaryFlags=*/0);
+  auto *typeReqLoc = getConstraintLocator(getRawAnchor(), path.drop_back());
 
   auto result = llvm::find_if(
       cs.CheckedConformances,
@@ -887,7 +886,7 @@ bool MemberAccessOnOptionalBaseFailure::diagnoseAsError() {
     return false;
 
   auto *anchor = getAnchor();
-  auto type = getType(anchor)->getRValueType();
+  auto baseType = getType(anchor)->getRValueType();
   bool resultIsOptional = ResultTypeIsOptional;
 
   // If we've resolved the member overload to one that returns an optional
@@ -898,8 +897,27 @@ bool MemberAccessOnOptionalBaseFailure::diagnoseAsError() {
   if (overload && overload->ImpliedType->getOptionalObjectType())
     resultIsOptional = true;
 
-  return diagnoseBaseUnwrapForMemberAccess(anchor, type, Member,
-                                           resultIsOptional, SourceRange());
+  auto unwrappedBaseType = baseType->getOptionalObjectType();
+  if (!unwrappedBaseType)
+    return false;
+
+  emitDiagnostic(anchor->getLoc(), diag::optional_base_not_unwrapped,
+                 baseType, Member, unwrappedBaseType);
+
+  // FIXME: It would be nice to immediately offer "base?.member ?? defaultValue"
+  // for non-optional results where that would be appropriate. For the moment
+  // always offering "?" means that if the user chooses chaining, we'll end up
+  // in MissingOptionalUnwrapFailure:diagnose() to offer a default value during
+  // the next compile.
+  emitDiagnostic(anchor->getLoc(), diag::optional_base_chain, Member)
+      .fixItInsertAfter(anchor->getEndLoc(), "?");
+
+  if (!resultIsOptional) {
+    emitDiagnostic(anchor->getLoc(), diag::unwrap_with_force_value)
+      .fixItInsertAfter(anchor->getEndLoc(), "!");
+  }
+
+  return true;
 }
 
 void MissingOptionalUnwrapFailure::offerDefaultValueUnwrapFixIt(
@@ -1926,8 +1944,7 @@ bool MissingCallFailure::diagnoseAsError() {
 
     case ConstraintLocator::AutoclosureResult: {
       auto &cs = getConstraintSystem();
-      auto loc = cs.getConstraintLocator(getRawAnchor(), path.drop_back(),
-                                         /*summaryFlags=*/0);
+      auto loc = getConstraintLocator(getRawAnchor(), path.drop_back());
       AutoClosureForwardingFailure failure(cs, loc);
       return failure.diagnoseAsError();
     }
@@ -1975,11 +1992,39 @@ bool MissingCallFailure::diagnoseAsError() {
   return true;
 }
 
+bool ExtraneousPropertyWrapperUnwrapFailure::diagnoseAsError() {
+  auto loc = getAnchor()->getLoc();
+  auto newPrefix = usingStorageWrapper() ? "$" : "_";
+
+  if (auto *member = getReferencedMember()) {
+    emitDiagnostic(loc, diag::incorrect_property_wrapper_reference_member,
+                   member->getDescriptiveKind(), member->getFullName(), false,
+                   getToType())
+        .fixItInsert(loc, newPrefix);
+    return true;
+  }
+
+  emitDiagnostic(loc, diag::incorrect_property_wrapper_reference,
+                 getPropertyName(), getFromType(), getToType(), false)
+      .fixItInsert(loc, newPrefix);
+  return true;
+}
+
 bool MissingPropertyWrapperUnwrapFailure::diagnoseAsError() {
-  emitDiagnostic(getAnchor()->getLoc(),
-                 diag::extraneous_property_wrapper_unwrap, getPropertyName(),
-                 getFromType(), getToType())
-      .fixItInsert(getAnchor()->getLoc(), "$");
+  auto loc = getAnchor()->getLoc();
+  auto endLoc = getAnchor()->getLoc().getAdvancedLoc(1);
+
+  if (auto *member = getReferencedMember()) {
+    emitDiagnostic(loc, diag::incorrect_property_wrapper_reference_member,
+                   member->getDescriptiveKind(), member->getFullName(), true,
+                   getToType())
+        .fixItRemoveChars(loc, endLoc);
+    return true;
+  }
+
+  emitDiagnostic(loc, diag::incorrect_property_wrapper_reference,
+                 getPropertyName(), getFromType(), getToType(), true)
+      .fixItRemoveChars(loc, endLoc);
   return true;
 }
 
@@ -2000,26 +2045,27 @@ bool SubscriptMisuseFailure::diagnoseAsError() {
 
   diag.highlight(memberRange).highlight(nameLoc.getSourceRange());
 
-  auto *parentExpr = findParentExpr(memberExpr);
-  assert(parentExpr && "Couldn't find a parent expression for a member call?!");
+  if (auto *parentExpr = dyn_cast_or_null<ApplyExpr>(findParentExpr(memberExpr))) {
+    auto *argExpr = parentExpr->getArg();
 
-  auto *argExpr = cast<ApplyExpr>(parentExpr)->getArg();
+    auto toCharSourceRange = Lexer::getCharSourceRangeFromSourceRange;
+    auto lastArgSymbol = toCharSourceRange(sourceMgr, argExpr->getEndLoc());
 
-  auto toCharSourceRange = Lexer::getCharSourceRangeFromSourceRange;
-  auto lastArgSymbol = toCharSourceRange(sourceMgr, argExpr->getEndLoc());
+    diag.fixItReplace(SourceRange(argExpr->getStartLoc()),
+                      getTokenText(tok::l_square));
+    diag.fixItRemove(nameLoc.getSourceRange());
+    diag.fixItRemove(SourceRange(memberExpr->getDotLoc()));
 
-  diag.fixItReplace(SourceRange(argExpr->getStartLoc()),
-                    getTokenText(tok::l_square));
-  diag.fixItRemove(nameLoc.getSourceRange());
-  diag.fixItRemove(SourceRange(memberExpr->getDotLoc()));
-
-  if (sourceMgr.extractText(lastArgSymbol) == getTokenText(tok::r_paren))
-    diag.fixItReplace(SourceRange(argExpr->getEndLoc()),
-                      getTokenText(tok::r_square));
-  else
-    diag.fixItInsertAfter(argExpr->getEndLoc(), getTokenText(tok::r_square));
-
+    if (sourceMgr.extractText(lastArgSymbol) == getTokenText(tok::r_paren))
+      diag.fixItReplace(SourceRange(argExpr->getEndLoc()),
+                        getTokenText(tok::r_square));
+    else
+      diag.fixItInsertAfter(argExpr->getEndLoc(), getTokenText(tok::r_square));
+  } else {
+    diag.fixItReplace(SourceRange(memberExpr->getDotLoc(), memberExpr->getLoc()), "[<#index#>]");
+  }
   diag.flush();
+
   if (auto overload = getOverloadChoiceIfAvailable(getLocator())) {
     emitDiagnostic(overload->choice.getDecl(), diag::kind_declared_here,
                    DescriptiveDeclKind::Subscript);
@@ -2107,9 +2153,15 @@ bool MissingMemberFailure::diagnoseAsError() {
   };
 
   if (getName().getBaseName().getKind() == DeclBaseName::Kind::Subscript) {
-    emitDiagnostic(anchor->getLoc(), diag::could_not_find_value_subscript,
-                   baseType)
+    auto loc = anchor->getLoc();
+    if (auto *metatype = baseType->getAs<MetatypeType>()) {
+      emitDiagnostic(loc, diag::could_not_find_type_member,
+                     metatype->getInstanceType(), getName())
         .highlight(baseExpr->getSourceRange());
+    } else {
+      emitDiagnostic(loc, diag::could_not_find_value_subscript, baseType)
+        .highlight(baseExpr->getSourceRange());
+    }
   } else if (getName().getBaseName() == "deinit") {
     // Specialised diagnostic if trying to access deinitialisers
     emitDiagnostic(anchor->getLoc(), diag::destructor_not_accessible)
@@ -2355,10 +2407,13 @@ bool AllowTypeOrInstanceMemberFailure::diagnoseAsError() {
       return true;
     }
 
-    if (isa<TypeExpr>(getRawAnchor())) {
-      emitDiagnostic(loc, diag::instance_member_use_on_type, instanceTy, Name)
-          .highlight(getRawAnchor()->getSourceRange());
-      return true;
+    if (auto *UDE = dyn_cast<UnresolvedDotExpr>(getRawAnchor())) {
+      auto *baseExpr = UDE->getBase();
+      if (isa<TypeExpr>(baseExpr)) {
+        emitDiagnostic(loc, diag::instance_member_use_on_type, instanceTy, Name)
+            .highlight(baseExpr->getSourceRange());
+        return true;
+      }
     }
 
     // Just emit a generic "instance member cannot be used" error

@@ -30,6 +30,9 @@
 using namespace swift;
 using namespace llvm::opt;
 
+/// The path for Swift libraries in the OS on Darwin.
+#define DARWIN_OS_LIBRARY_PATH "/usr/lib/swift"
+
 swift::CompilerInvocation::CompilerInvocation() {
   setTargetTriple(llvm::sys::getDefaultTargetTriple());
 }
@@ -66,7 +69,10 @@ static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
   llvm::SmallString<128> LibPath(SearchPathOpts.RuntimeResourcePath);
 
   llvm::sys::path::append(LibPath, getPlatformNameForTriple(Triple));
-  SearchPathOpts.RuntimeLibraryPath = LibPath.str();
+  SearchPathOpts.RuntimeLibraryPaths.clear();
+  SearchPathOpts.RuntimeLibraryPaths.push_back(LibPath.str());
+  if (Triple.isOSDarwin())
+    SearchPathOpts.RuntimeLibraryPaths.push_back(DARWIN_OS_LIBRARY_PATH);
 
   // Set up the import paths containing the swiftmodules for the libraries in
   // RuntimeLibraryPath.
@@ -83,6 +89,10 @@ static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
   if (!SearchPathOpts.SDKPath.empty()) {
     LibPath = SearchPathOpts.SDKPath;
     llvm::sys::path::append(LibPath, "usr", "lib", "swift");
+    if (!Triple.isOSDarwin()) {
+      llvm::sys::path::append(LibPath, getPlatformNameForTriple(Triple));
+      llvm::sys::path::append(LibPath, swift::getMajorArchitectureName(Triple));
+    }
     SearchPathOpts.RuntimeLibraryImportPaths.push_back(LibPath.str());
   }
 }
@@ -324,8 +334,13 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
       = A->getOption().matches(OPT_enable_target_os_checking);
   }
   
-  Opts.EnableASTScopeLookup |= Args.hasArg(OPT_enable_astscope_lookup) || Args.hasArg(OPT_disable_parser_lookup);
+  Opts.DisableParserLookup |= Args.hasArg(OPT_disable_parser_lookup);
+  Opts.EnableASTScopeLookup =
+      Args.hasFlag(options::OPT_enable_astscope_lookup,
+                   options::OPT_disable_astscope_lookup, Opts.EnableASTScopeLookup) ||
+      Opts.DisableParserLookup;
   Opts.CompareToASTScopeLookup |= Args.hasArg(OPT_compare_to_astscope_lookup);
+
   Opts.DebugConstraintSolver |= Args.hasArg(OPT_debug_constraints);
   Opts.NamedLazyMemberLoading &= !Args.hasArg(OPT_disable_named_lazy_member_loading);
   Opts.DebugGenericSignatures |= Args.hasArg(OPT_debug_generic_signatures);

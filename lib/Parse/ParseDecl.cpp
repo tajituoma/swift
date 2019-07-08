@@ -1979,6 +1979,34 @@ bool Parser::parseNewDeclAttribute(DeclAttributes &Attributes, SourceLoc AtLoc,
     break;
   }
 
+  case DAK_ProjectedValueProperty: {
+    if (!consumeIf(tok::l_paren)) {
+      diagnose(Loc, diag::attr_expected_lparen, AttrName,
+               DeclAttribute::isDeclModifier(DK));
+      return false;
+    }
+
+    if (Tok.isNot(tok::identifier)) {
+      diagnose(Loc, diag::projection_value_property_not_identifier);
+      return false;
+    }
+
+    Identifier name;
+    consumeIdentifier(&name, /*allowDollarIdentifier=*/true);
+
+    auto range = SourceRange(Loc, Tok.getRange().getStart());
+
+    if (!consumeIf(tok::r_paren)) {
+      diagnose(Loc, diag::attr_expected_rparen, AttrName,
+               DeclAttribute::isDeclModifier(DK));
+      return false;
+    }
+
+    Attributes.add(new (Context) ProjectedValuePropertyAttr(
+        name, AtLoc, range, /*implicit*/ false));
+    break;
+  }
+
   // SWIFT_ENABLE_TENSORFLOW
   case DAK_Differentiating: {
     auto Attr = parseDifferentiatingAttribute(AtLoc, Loc);
@@ -3551,6 +3579,8 @@ void Parser::parseDeclDelayed() {
         NTD->addMember(D);
       } else if (auto *ED = dyn_cast<ExtensionDecl>(parent)) {
         ED->addMember(D);
+      } else if (auto *SF = dyn_cast<SourceFile>(parent)) {
+        SF->Decls.push_back(D);
       }
     }
   });

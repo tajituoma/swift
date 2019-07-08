@@ -80,7 +80,7 @@ toolchains::Windows::constructInvocation(const DynamicLinkJobAction &job,
 
   // Configure the toolchain.
   // By default, use the system clang++ to link.
-  const char *Clang = nullptr;
+  const char *Clang = "clang++";
   if (const Arg *A = context.Args.getLastArg(options::OPT_tools_directory)) {
     StringRef toolchainPath(A->getValue());
 
@@ -89,12 +89,6 @@ toolchains::Windows::constructInvocation(const DynamicLinkJobAction &job,
             llvm::sys::findProgramByName("clang++", {toolchainPath}))
       Clang = context.Args.MakeArgString(toolchainClang.get());
   }
-  if (Clang == nullptr) {
-    if (auto pathClang = llvm::sys::findProgramByName("clang++", None))
-      Clang = context.Args.MakeArgString(pathClang.get());
-  }
-  assert(Clang &&
-         "clang++ was not found in the toolchain directory or system path.");
 
   std::string Target = getTriple().str();
   if (!Target.empty()) {
@@ -204,19 +198,21 @@ toolchains::Windows::constructInvocation(const StaticLinkJobAction &job,
 
   ArgStringList Arguments;
 
-  // Configure the toolchain.
-  const char *Link = "link";
-  Arguments.push_back("-lib");
+  const char *Linker = "link";
+  if (const Arg *A = context.Args.getLastArg(options::OPT_use_ld))
+    Linker = context.Args.MakeArgString(A->getValue());
+
+  Arguments.push_back("/lib");
+  Arguments.push_back("-nologo");
 
   addPrimaryInputsOfType(Arguments, context.Inputs, context.Args,
                          file_types::TY_Object);
   addInputsOfType(Arguments, context.InputActions, file_types::TY_Object);
 
-  Arguments.push_back(
-      context.Args.MakeArgString(Twine("/OUT:") + 
-      context.Output.getPrimaryOutputFilename()));
+  StringRef OutputFile = context.Output.getPrimaryOutputFilename();
+  Arguments.push_back(context.Args.MakeArgString(Twine("/OUT:") + OutputFile));
 
-  InvocationInfo II{Link, Arguments};
+  InvocationInfo II{Linker, Arguments};
   II.allowsResponseFiles = true;
 
   return II;

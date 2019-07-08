@@ -36,7 +36,7 @@ func foo() -> Int { return 17 }
 struct HasWrappers {
   // CHECK: @Wrapper var x: Int {
   // CHECK-NEXT:  get
-  // CHECK: var $x: Wrapper<Int>
+  // CHECK: var _x: Wrapper<Int>
   @Wrapper(closure: foo)
   var x: Int
 
@@ -47,7 +47,7 @@ struct HasWrappers {
   var z: String
 
   // Memberwise initializer.
-  // CHECK: init(x: Wrapper<Int> = Wrapper(closure: foo), y: Bool = true, z: String)
+  // CHECK: init(x: Wrapper<Int> = Wrapper(closure: foo), y: Bool = true, z: String = Wrapper())
 }
 
 func trigger() {

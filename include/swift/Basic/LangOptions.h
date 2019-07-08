@@ -88,7 +88,8 @@ namespace swift {
     bool DisableAvailabilityChecking = false;
 
     /// Maximum number of typo corrections we are allowed to perform.
-    unsigned TypoCorrectionLimit = 10;
+    /// This is disabled by default until we can get typo-correction working within acceptable performance bounds.
+    unsigned TypoCorrectionLimit = 0;
     
     /// Should access control be respected?
     bool EnableAccessControl = true;
@@ -251,8 +252,11 @@ namespace swift {
     bool EnableDeserializationRecovery = true;
 
     /// Should we use \c ASTScope-based resolution for unqualified name lookup?
+    /// Default is in \c ParseLangArgs
+    ///
+    /// This is a staging flag; eventually it will be removed.
     bool EnableASTScopeLookup = false;
-    
+
     /// Someday, ASTScopeLookup will supplant lookup in the parser
     bool DisableParserLookup = false;
 
